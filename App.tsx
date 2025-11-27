@@ -433,6 +433,32 @@ const App: React.FC = () => {
               {/* Analysis & Recommendations */}
               {!state.isLoading && (
                 <div className="space-y-12">
+                  {/* User Request Input - Keep visible for re-generation */}
+                  <div className="max-w-3xl mx-auto bg-neutral-900/50 border border-neutral-800 rounded-2xl p-6 backdrop-blur-sm">
+                    <div className="space-y-2">
+                      <label
+                        htmlFor="user-request-results"
+                        className="block text-sm font-medium text-gray-300 text-left"
+                      >
+                        What kind of makeup look would you like? (Optional)
+                      </label>
+                      <input
+                        id="user-request-results"
+                        type="text"
+                        value={userRequest}
+                        onChange={(e) => setUserRequest(e.target.value)}
+                        placeholder="e.g., Cool-tone pink lipstick, natural everyday look, dewy glass skin..."
+                        className="w-full px-4 py-3 bg-neutral-800 border border-neutral-700 rounded-lg text-white placeholder-gray-500 focus:outline-none focus:border-neon-500 focus:ring-1 focus:ring-neon-500 transition-colors"
+                      />
+                      <p className="text-xs text-gray-500 text-left">
+                        Describe your desired makeup style, products, or skin tone preferences
+                      </p>
+                    </div>
+                    <Button onClick={handleProcess} className="w-full text-lg mt-4" disabled={state.isLoading}>
+                      Regenerate Look <Sparkles className="ml-2" size={18} />
+                    </Button>
+                  </div>
+
                   {/* Description Box */}
                   <div className="bg-neutral-900/60 border border-neutral-800 p-8 rounded-2xl text-center max-w-3xl mx-auto backdrop-blur-md relative overflow-hidden">
                     <div className="absolute top-0 left-0 w-full h-1 bg-gradient-to-r from-transparent via-neon-500 to-transparent opacity-50"></div>

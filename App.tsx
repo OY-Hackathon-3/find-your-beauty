@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useRef } from "react";
+import { toPng } from "html-to-image";
 import {
   Sparkles,
   Upload,
@@ -6,6 +7,7 @@ import {
   Camera,
   RefreshCw,
   ArrowRight,
+  Download,
   X,
 } from "lucide-react";
 import { BeautyState, Product, SharedData } from "./types";
@@ -27,9 +29,16 @@ const App: React.FC = () => {
   const [isCameraMode, setIsCameraMode] = useState(false);
   const [stream, setStream] = useState<MediaStream | null>(null);
   const [userRequest, setUserRequest] = useState<string>("");
+  const [isSavingImage, setIsSavingImage] = useState(false);
 
   const fileInputRef = useRef<HTMLInputElement>(null);
   const videoRef = useRef<HTMLVideoElement>(null);
+  const pageRef = useRef<HTMLDivElement>(null);
+  const shareCardRef = useRef<HTMLDivElement>(null);
+  const trimmedUserRequest = userRequest.trim();
+  const canSaveShareCard = Boolean(
+    state.originalImage && state.generatedImage && state.lookDescription
+  );
 
   // Load state from URL hash on mount if available
   useEffect(() => {
@@ -197,6 +206,33 @@ const App: React.FC = () => {
     }
   };
 
+  const handleSaveImage = async () => {
+    if (isSavingImage || !canSaveShareCard) return;
+    const target = shareCardRef.current;
+    if (!target) return;
+
+    setIsSavingImage(true);
+    const originalScrollY = window.scrollY;
+
+    try {
+      window.scrollTo(0, 0);
+      const dataUrl = await toPng(target, {
+        cacheBust: true,
+        backgroundColor: "#000000",
+        pixelRatio: window.devicePixelRatio || 1,
+      });
+      const link = document.createElement("a");
+      link.href = dataUrl;
+      link.download = `find-your-beauty-${Date.now()}.png`;
+      link.click();
+    } catch (error) {
+      console.error("Failed to save snapshot:", error);
+    } finally {
+      window.scrollTo(0, originalScrollY);
+      setIsSavingImage(false);
+    }
+  };
+
   const handleShare = () => {
     if (!state.lookDescription) return;
 
@@ -230,7 +266,10 @@ const App: React.FC = () => {
   };
 
   return (
-    <div className="min-h-screen bg-black text-gray-200 selection:bg-neon-500 selection:text-black font-sans">
+    <div
+      ref={pageRef}
+      className="min-h-screen bg-black text-gray-200 selection:bg-neon-500 selection:text-black font-sans"
+    >
       {/* Background Ambience */}
       <div className="fixed inset-0 z-0 pointer-events-none overflow-hidden">
         <div className="absolute top-[-10%] left-[-10%] w-[500px] h-[500px] bg-neon-900/20 rounded-full blur-[100px]" />
@@ -499,6 +538,14 @@ const App: React.FC = () => {
                     <Button onClick={reset} variant="secondary">
                       <RefreshCw className="mr-2" size={18} /> Try Another Photo
                     </Button>
+                    <Button
+                      onClick={handleSaveImage}
+                      variant="secondary"
+                      isLoading={isSavingImage}
+                      disabled={isSavingImage || !canSaveShareCard}
+                    >
+                      <Download className="mr-2" size={18} /> Save Snapshot
+                    </Button>
                     <Button onClick={handleShare}>
                       {shareUrl ? "Link Copied!" : "Share Results"}{" "}
                       <Share2 className="ml-2" size={18} />
@@ -516,6 +563,81 @@ const App: React.FC = () => {
             Products sourced from Global Olive Young.
           </p>
         </footer>
+      </div>
+
+      {/* Hidden share card used for the downloadable snapshot */}
+      <div className="fixed -left-[2000px] top-0 pointer-events-none select-none">
+        <div
+          ref={shareCardRef}
+          className="w-[1200px] h-[675px] bg-gradient-to-br from-black via-neutral-900 to-black text-white rounded-[32px] border border-neon-500/40 shadow-[0_20px_60px_rgba(0,0,0,0.65)] p-12 flex flex-col gap-6 overflow-hidden"
+        >
+          <div className="flex items-start justify-between gap-6">
+            <div>
+              <p className="text-sm uppercase tracking-[0.3em] text-neon-400 font-semibold">
+                Find Your Beauty
+              </p>
+              <h2 className="text-4xl font-black mt-2 leading-tight">
+                Personalized K-Beauty Makeover
+              </h2>
+              <p className="text-gray-400 mt-3 text-sm">
+                {trimmedUserRequest
+                  ? `Request: ${trimmedUserRequest}`
+                  : "Request: Custom AI-generated look"}
+              </p>
+            </div>
+            <div className="text-right">
+              <p className="text-xs uppercase tracking-[0.4em] text-gray-500">
+                Powered By
+              </p>
+              <p className="text-neon-400 font-semibold text-xl">
+                Google Gemini
+              </p>
+            </div>
+          </div>
+
+          <div className="flex flex-1 gap-6">
+            <div className="flex-1 relative rounded-[28px] border border-white/10 bg-neutral-900 overflow-hidden flex items-center justify-center">
+              <div className="absolute top-6 left-6 bg-black/60 px-4 py-1 rounded-full text-xs tracking-[0.3em] font-semibold">
+                ORIGINAL
+              </div>
+              {state.originalImage ? (
+                <img
+                  src={state.originalImage}
+                  alt="Original"
+                  className="w-full h-full object-cover"
+                />
+              ) : (
+                <p className="text-gray-600 text-lg">Awaiting upload</p>
+              )}
+            </div>
+            <div className="flex-1 relative rounded-[28px] border border-neon-500/40 bg-neutral-900 overflow-hidden flex items-center justify-center shadow-[0_0_45px_rgba(74,222,128,0.25)]">
+              <div className="absolute top-6 left-6 bg-neon-500/90 text-black px-4 py-1 rounded-full text-xs tracking-[0.3em] font-black">
+                AI LOOK
+              </div>
+              {state.generatedImage ? (
+                <img
+                  src={state.generatedImage}
+                  alt="Generated"
+                  className="w-full h-full object-cover"
+                />
+              ) : (
+                <p className="text-gray-500 text-lg text-center px-4">
+                  Generate a look to preview
+                </p>
+              )}
+            </div>
+          </div>
+
+          <div className="bg-neutral-900/70 border border-white/10 rounded-[24px] p-6 relative">
+            <div className="absolute inset-x-6 top-0 h-px bg-gradient-to-r from-transparent via-neon-500/60 to-transparent" />
+            <p className="text-sm uppercase tracking-[0.4em] text-neon-400 font-semibold">
+              Your Beauty Profile
+            </p>
+            <p className="text-2xl mt-3 leading-relaxed text-gray-100">
+              {state.lookDescription || "A custom look curated just for you."}
+            </p>
+          </div>
+        </div>
       </div>
     </div>
   );

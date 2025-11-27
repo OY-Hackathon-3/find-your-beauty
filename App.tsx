@@ -11,7 +11,11 @@ import {
   X,
 } from "lucide-react";
 import { BeautyState, Product, SharedData } from "./types";
-import { generateMakeupLook, searchProducts } from "./services/geminiService";
+import {
+  generateFacialReport,
+  generateMakeupLook,
+  searchProducts,
+} from "./services/geminiService";
 import Button from "./components/Button";
 import ProductCard from "./components/ProductCard";
 
@@ -19,16 +23,20 @@ const App: React.FC = () => {
   const [state, setState] = useState<BeautyState>({
     originalImage: null,
     generatedImage: null,
+    diagnosticImage: null,
     products: [],
     isLoading: false,
     error: null,
     lookDescription: null,
+    diagnosticSummary: null,
+    diagnosticMetrics: [],
   });
 
   const [shareUrl, setShareUrl] = useState<string | null>(null);
   const [isCameraMode, setIsCameraMode] = useState(false);
   const [stream, setStream] = useState<MediaStream | null>(null);
   const [userRequest, setUserRequest] = useState<string>("");
+  const [researchNotes, setResearchNotes] = useState<string>("");
   const [isSavingImage, setIsSavingImage] = useState(false);
 
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -36,8 +44,15 @@ const App: React.FC = () => {
   const pageRef = useRef<HTMLDivElement>(null);
   const shareCardRef = useRef<HTMLDivElement>(null);
   const trimmedUserRequest = userRequest.trim();
+  const trimmedResearchNotes = researchNotes.trim();
   const canSaveShareCard = Boolean(
-    state.originalImage && state.generatedImage && state.lookDescription
+    state.diagnosticImage &&
+      state.generatedImage &&
+      state.lookDescription &&
+      state.diagnosticMetrics.length
+  );
+  const overallMetric = state.diagnosticMetrics.find((metric) =>
+    metric.label.toLowerCase().includes("overall")
   );
 
   // Load state from URL hash on mount if available
@@ -136,8 +151,11 @@ const App: React.FC = () => {
       ...prev,
       originalImage: dataUrl,
       generatedImage: null,
+      diagnosticImage: null,
       products: [],
       lookDescription: null,
+      diagnosticSummary: null,
+      diagnosticMetrics: [],
       error: null,
       isLoading: false,
     }));
@@ -164,8 +182,11 @@ const App: React.FC = () => {
         ...prev,
         originalImage: base64,
         generatedImage: null,
+        diagnosticImage: null,
         products: [],
         lookDescription: null,
+        diagnosticSummary: null,
+        diagnosticMetrics: [],
         error: null,
         isLoading: false,
       }));
@@ -176,16 +197,39 @@ const App: React.FC = () => {
   const handleProcess = async () => {
     if (!state.originalImage) return;
 
-    setState((prev) => ({ ...prev, isLoading: true, error: null }));
+    setState((prev) => ({
+      ...prev,
+      isLoading: true,
+      error: null,
+      generatedImage: null,
+      products: [],
+      lookDescription: null,
+    }));
 
     try {
-      // Split base64 header
       const base64Data = state.originalImage.split(",")[1];
+      const promptText = trimmedUserRequest;
+      const contextText = trimmedResearchNotes;
 
-      // Run parallel requests: Visual Generation & Product Search with user request
+      const diagnosis = await generateFacialReport(base64Data);
+      const diagnosticImageUrl = diagnosis.reportImage
+        ? `data:image/png;base64,${diagnosis.reportImage}`
+        : null;
+
+      setState((prev) => ({
+        ...prev,
+        diagnosticImage: diagnosticImageUrl,
+        diagnosticSummary: diagnosis.summary,
+        diagnosticMetrics: diagnosis.metrics,
+      }));
+
+      const diagnosisContext = `${diagnosis.summary}. Metrics: ${diagnosis.metrics
+        .map((metric) => `${metric.label} ${metric.score}%`)
+        .join(", ")}`;
+
       const [generatedImgB64, productData] = await Promise.all([
-        generateMakeupLook(base64Data, userRequest),
-        searchProducts(base64Data, userRequest),
+        generateMakeupLook(base64Data, promptText, contextText, diagnosisContext),
+        searchProducts(base64Data, promptText, contextText, diagnosisContext),
       ]);
 
       setState((prev) => ({
@@ -201,7 +245,7 @@ const App: React.FC = () => {
         ...prev,
         isLoading: false,
         error:
-          "Failed to generate your beauty look. Please try a clearer photo or try again later.",
+          "Failed to run the facial report. Please try a clearer portrait or retry shortly.",
       }));
     }
   };
@@ -257,11 +301,16 @@ const App: React.FC = () => {
     setState({
       originalImage: null,
       generatedImage: null,
+       diagnosticImage: null,
       products: [],
       isLoading: false,
       error: null,
       lookDescription: null,
+      diagnosticSummary: null,
+      diagnosticMetrics: [],
     });
+    setUserRequest("");
+    setResearchNotes("");
     window.location.hash = "";
   };
 
@@ -424,8 +473,8 @@ const App: React.FC = () => {
             /* Result Section */
             <div className="animate-in fade-in slide-in-from-bottom-8 duration-700">
               {/* Image Compare / Display */}
-              <div className="grid md:grid-cols-2 gap-8 mb-16">
-                {/* Original (or Shared Placeholder) */}
+              <div className="grid gap-8 mb-16 lg:grid-cols-3">
+                {/* Original */}
                 <div className="relative rounded-2xl overflow-hidden shadow-[0_0_30px_rgba(0,0,0,0.5)] border border-neutral-800 bg-neutral-900 group">
                   <div className="absolute top-4 left-4 bg-black/70 backdrop-blur text-white px-3 py-1 rounded-full text-xs font-bold tracking-wider z-10 border border-white/10">
                     ORIGINAL
@@ -443,7 +492,29 @@ const App: React.FC = () => {
                   )}
                 </div>
 
-                {/* Generated */}
+                {/* Diagnostic Poster */}
+                <div className="relative rounded-2xl overflow-hidden border border-slate-100/10 bg-neutral-900 shadow-[0_0_35px_rgba(148,163,184,0.25)]">
+                  <div className="absolute top-4 left-4 bg-white/10 backdrop-blur text-white px-3 py-1 rounded-full text-xs font-bold tracking-[0.3em] z-10 border border-white/20">
+                    FACIAL REPORT
+                  </div>
+                  {state.diagnosticImage ? (
+                    <img
+                      src={state.diagnosticImage}
+                      alt="Facial report"
+                      className="w-full h-full object-cover min-h-[400px]"
+                    />
+                  ) : (
+                    <div className="w-full h-full min-h-[400px] flex flex-col items-center justify-center text-gray-500">
+                      <p>
+                        {state.isLoading
+                          ? "Generating diagnostic overlay..."
+                          : "Run analysis to view poster."}
+                      </p>
+                    </div>
+                  )}
+                </div>
+
+                {/* AI Makeover */}
                 <div className="relative rounded-2xl overflow-hidden shadow-[0_0_30px_rgba(74,222,128,0.2)] border border-neon-500/30 bg-neutral-900">
                   <div className="absolute top-4 left-4 bg-neon-500/90 text-black px-3 py-1 rounded-full text-xs font-bold tracking-wider z-10 shadow-lg">
                     AI MAKEOVER
@@ -463,37 +534,98 @@ const App: React.FC = () => {
                     />
                   ) : (
                     <div className="w-full h-full min-h-[400px] flex items-center justify-center text-gray-500">
-                      <p>Visual preview unavailable in shared mode</p>
+                      <p>Generate a look to preview</p>
                     </div>
                   )}
                 </div>
               </div>
 
+              {state.diagnosticSummary && (
+                <div className="bg-neutral-900/80 border border-white/10 rounded-2xl p-8 mb-16 shadow-[0_0_30px_rgba(148,163,184,0.15)]">
+                  <div className="flex flex-col gap-6 lg:flex-row lg:items-center lg:justify-between">
+                    <div>
+                      <p className="text-sm uppercase tracking-[0.4em] text-neon-400 font-semibold">
+                        Facial Aesthetic Report
+                      </p>
+                      <p className="text-gray-200 text-lg mt-3 leading-relaxed">
+                        {state.diagnosticSummary}
+                      </p>
+                    </div>
+                    {overallMetric && (
+                      <div className="text-center bg-black/50 border border-white/10 rounded-2xl px-10 py-6">
+                        <p className="text-xs uppercase tracking-[0.5em] text-gray-400">
+                          Overall Score
+                        </p>
+                        <p className="text-5xl font-black text-neon-400 mt-2">
+                          {overallMetric.score}%
+                        </p>
+                      </div>
+                    )}
+                  </div>
+                  {state.diagnosticMetrics.length > 0 && (
+                    <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-4 mt-8">
+                      {state.diagnosticMetrics.map((metric, idx) => (
+                        <div
+                          key={`${metric.label}-${idx}`}
+                          className="rounded-xl border border-white/10 bg-black/30 px-4 py-3"
+                        >
+                          <p className="text-[10px] uppercase tracking-[0.35em] text-gray-400 font-semibold">
+                            {metric.label}
+                          </p>
+                          <p className="text-2xl font-bold text-white mt-2">
+                            {metric.score}%
+                          </p>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              )}
+
               {/* Analysis & Recommendations */}
               {!state.isLoading && (
                 <div className="space-y-12">
                   {/* User Request Input - Keep visible for re-generation */}
-                  <div className="max-w-3xl mx-auto bg-neutral-900/50 border border-neutral-800 rounded-2xl p-6 backdrop-blur-sm">
+                  <div className="max-w-3xl mx-auto bg-neutral-900/50 border border-neutral-800 rounded-2xl p-6 backdrop-blur-sm space-y-4">
                     <div className="space-y-2">
                       <label
                         htmlFor="user-request-results"
-                        className="block text-sm font-medium text-gray-300 text-left"
+                        className="block text-sm font-semibold text-gray-300 uppercase tracking-wide"
                       >
-                        What kind of makeup look would you like? (Optional)
+                        Makeup request
                       </label>
                       <input
                         id="user-request-results"
                         type="text"
                         value={userRequest}
                         onChange={(e) => setUserRequest(e.target.value)}
-                        placeholder="e.g., Cool-tone pink lipstick, natural everyday look, dewy glass skin..."
+                        placeholder='예: "립스틱을 바르고 싶어" 또는 "글리터 강조 아이돌 메이크업"'
                         className="w-full px-4 py-3 bg-neutral-800 border border-neutral-700 rounded-lg text-white placeholder-gray-500 focus:outline-none focus:border-neon-500 focus:ring-1 focus:ring-neon-500 transition-colors"
                       />
                       <p className="text-xs text-gray-500 text-left">
-                        Describe your desired makeup style, products, or skin tone preferences
+                        Update the request to focus on a new area or vibe.
                       </p>
                     </div>
-                    <Button onClick={handleProcess} className="w-full text-lg mt-4" disabled={state.isLoading}>
+                    <div className="space-y-2">
+                      <label
+                        htmlFor="research-notes-results"
+                        className="block text-sm font-semibold text-gray-300 uppercase tracking-wide"
+                      >
+                        Research notes
+                      </label>
+                      <textarea
+                        id="research-notes-results"
+                        rows={3}
+                        value={researchNotes}
+                        onChange={(e) => setResearchNotes(e.target.value)}
+                        placeholder="Paste YouTube 영상 설명, 댓글 요약, 구글 검색 결과 등 참고 내용"
+                        className="w-full px-4 py-3 bg-neutral-800 border border-neutral-700 rounded-lg text-white placeholder-gray-500 focus:outline-none focus:border-neon-500 focus:ring-1 focus:ring-neon-500 transition-colors resize-none"
+                      />
+                      <p className="text-xs text-gray-500 text-left">
+                        The AI will weave these notes into both the makeover and recommendations.
+                      </p>
+                    </div>
+                    <Button onClick={handleProcess} className="w-full text-lg" disabled={state.isLoading}>
                       Regenerate Look <Sparkles className="ml-2" size={18} />
                     </Button>
                   </div>
@@ -505,7 +637,10 @@ const App: React.FC = () => {
                       Your Beauty Profile
                     </h2>
                     <p className="text-gray-300 text-lg leading-relaxed italic">
-                      "{state.lookDescription}"
+                      "
+                      {state.lookDescription ||
+                        "A curated look tailored to your diagnosis."}
+                      "
                     </p>
                   </div>
 
@@ -577,13 +712,18 @@ const App: React.FC = () => {
                 Find Your Beauty
               </p>
               <h2 className="text-4xl font-black mt-2 leading-tight">
-                Personalized K-Beauty Makeover
+                Facial Aesthetic Report & Makeover
               </h2>
               <p className="text-gray-400 mt-3 text-sm">
                 {trimmedUserRequest
                   ? `Request: ${trimmedUserRequest}`
-                  : "Request: Custom AI-generated look"}
+                  : "Request: Custom AI makeover"}
               </p>
+              {trimmedResearchNotes && (
+                <p className="text-gray-500 text-xs mt-1">
+                  Research: {trimmedResearchNotes}
+                </p>
+              )}
             </div>
             <div className="text-right">
               <p className="text-xs uppercase tracking-[0.4em] text-gray-500">
@@ -597,22 +737,22 @@ const App: React.FC = () => {
 
           <div className="flex flex-1 gap-6">
             <div className="flex-1 relative rounded-[28px] border border-white/10 bg-neutral-900 overflow-hidden flex items-center justify-center">
-              <div className="absolute top-6 left-6 bg-black/60 px-4 py-1 rounded-full text-xs tracking-[0.3em] font-semibold">
-                ORIGINAL
+              <div className="absolute top-6 left-6 bg-white/15 px-4 py-1 rounded-full text-xs tracking-[0.3em] font-semibold">
+                FACIAL REPORT
               </div>
-              {state.originalImage ? (
+              {state.diagnosticImage ? (
                 <img
-                  src={state.originalImage}
-                  alt="Original"
+                  src={state.diagnosticImage}
+                  alt="Facial report"
                   className="w-full h-full object-cover"
                 />
               ) : (
-                <p className="text-gray-600 text-lg">Awaiting upload</p>
+                <p className="text-gray-600 text-lg">Generate report</p>
               )}
             </div>
             <div className="flex-1 relative rounded-[28px] border border-neon-500/40 bg-neutral-900 overflow-hidden flex items-center justify-center shadow-[0_0_45px_rgba(74,222,128,0.25)]">
               <div className="absolute top-6 left-6 bg-neon-500/90 text-black px-4 py-1 rounded-full text-xs tracking-[0.3em] font-black">
-                AI LOOK
+                AI MAKEOVER
               </div>
               {state.generatedImage ? (
                 <img
@@ -622,20 +762,48 @@ const App: React.FC = () => {
                 />
               ) : (
                 <p className="text-gray-500 text-lg text-center px-4">
-                  Generate a look to preview
+                  Awaiting makeover
                 </p>
               )}
             </div>
           </div>
 
-          <div className="bg-neutral-900/70 border border-white/10 rounded-[24px] p-6 relative">
-            <div className="absolute inset-x-6 top-0 h-px bg-gradient-to-r from-transparent via-neon-500/60 to-transparent" />
-            <p className="text-sm uppercase tracking-[0.4em] text-neon-400 font-semibold">
-              Your Beauty Profile
-            </p>
-            <p className="text-2xl mt-3 leading-relaxed text-gray-100">
-              {state.lookDescription || "A custom look curated just for you."}
-            </p>
+          <div className="grid grid-cols-3 gap-4">
+            {state.diagnosticMetrics.map((metric, idx) => (
+              <div
+                key={`share-metric-${metric.label}-${idx}`}
+                className="rounded-2xl border border-white/10 bg-black/30 px-4 py-3"
+              >
+                <p className="text-[10px] uppercase tracking-[0.35em] text-gray-400 font-semibold">
+                  {metric.label}
+                </p>
+                <p className="text-2xl font-bold text-white mt-2">
+                  {metric.score}%
+                </p>
+              </div>
+            ))}
+          </div>
+
+          <div className="grid grid-cols-2 gap-4">
+            <div className="bg-neutral-900/70 border border-white/10 rounded-[24px] p-6 relative">
+              <div className="absolute inset-x-6 top-0 h-px bg-gradient-to-r from-transparent via-white/30 to-transparent" />
+              <p className="text-sm uppercase tracking-[0.4em] text-white/70 font-semibold">
+                Diagnostic Summary
+              </p>
+              <p className="text-lg mt-3 leading-relaxed text-gray-100">
+                {state.diagnosticSummary ||
+                  "Run the analysis to receive a clinical breakdown."}
+              </p>
+            </div>
+            <div className="bg-neutral-900/70 border border-white/10 rounded-[24px] p-6 relative">
+              <div className="absolute inset-x-6 top-0 h-px bg-gradient-to-r from-transparent via-neon-500/60 to-transparent" />
+              <p className="text-sm uppercase tracking-[0.4em] text-neon-400 font-semibold">
+                Makeover Brief
+              </p>
+              <p className="text-lg mt-3 leading-relaxed text-gray-100">
+                {state.lookDescription || "A custom look curated just for you."}
+              </p>
+            </div>
           </div>
         </div>
       </div>

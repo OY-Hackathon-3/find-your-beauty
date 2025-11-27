@@ -1,5 +1,5 @@
 import { GoogleGenAI } from "@google/genai";
-import { Product } from "../types";
+import { Product, FacialMetric } from "../types";
 
 // Helper to clean JSON string from code blocks
 const cleanJsonString = (str: string) => {
@@ -59,6 +59,18 @@ const FALLBACK_REASONS = [
   "A top-rated favorite known for its hydrating and soothing properties.",
   "Perfect for creating a natural, radiant look suitable for daily wear.",
   "Highly effective for enhancing skin texture and tone to match the generated look."
+];
+
+const GOOGLE_SEARCH_TOOL = [{ googleSearchRetrieval: {} }];
+
+const DEFAULT_METRICS: FacialMetric[] = [
+  { label: "Eyes Beauty", score: 85 },
+  { label: "Cheeks Harmony", score: 82 },
+  { label: "Lips Shape", score: 84 },
+  { label: "Eyebrows Design", score: 80 },
+  { label: "Jaw & Chin Definition", score: 83 },
+  { label: "Facial Symmetry", score: 86 },
+  { label: "OVERALL SCORE", score: 85 }
 ];
 
 /**
@@ -121,19 +133,155 @@ const fetchOliveYoungProducts = async (): Promise<OliveYoungItem[]> => {
 };
 
 /**
- * Generates a makeup look based on the uploaded image and user's request.
+ * Generates a facial diagnostic poster plus JSON metrics.
  */
-export const generateMakeupLook = async (imageBase64: string, userRequest: string = ""): Promise<string> => {
+export const generateFacialReport = async (
+  imageBase64: string
+): Promise<{ reportImage: string; summary: string; metrics: FacialMetric[] }> => {
+  const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
+  const overlayPrompt = `Use the provided portrait photo <YOUR PHOTO> as the base.
+Do NOT change the person’s face, expression, age, skin tone or gender. Just overlay a clean, minimal infographic on top.
+Create a high-resolution vertical “FACIAL AESTHETIC REPORT” poster, studio lighting, soft beige background, premium beauty clinic style.
+The subject can be MALE or FEMALE – keep them exactly as in the original photo.
+Add thin white lines and labels pointing to each area of the REAL face, with percentage scores based on global aesthetic ratios, symmetry and proportions (do not change the face):
+1. Eyes: Label near the eyes with a line pointing to them: “Eyes Beauty – XX%”
+2. Cheeks: Label near the cheekbones: “Cheeks Harmony – XX%”
+3. Lips: Label close to the mouth: “Lips Shape – XX%”
+4. Eyebrows: Label above or beside the brows: “Eyebrows Design – XX%”
+5. Jaw & Chin: Label near the jawline and chin: “Jaw & Chin Definition – XX%”
+6. Overall Facial Symmetry: Label near the center of the face: “Facial Symmetry – XX%”
+At the bottom center of the poster, add a BIG, bold number inside a circle or rectangle:
+“OVERALL SCORE: XX%”
+Design style:
+– clean, medical-grade, aesthetic-clinic infographic
+– modern thin sans-serif typography
+– white text and lines, subtle drop shadows
+– no logos, no extra graphics, no text other than the labels and scores above.`;
+
+  try {
+    const response = await ai.models.generateContent({
+      model: "gemini-2.5-flash-image",
+      contents: {
+        parts: [
+          {
+            inlineData: {
+              mimeType: "image/jpeg",
+              data: imageBase64,
+            },
+          },
+          {
+            text: overlayPrompt,
+          },
+        ],
+      },
+      tools: GOOGLE_SEARCH_TOOL,
+    });
+
+    let reportImage = "";
+    for (const part of response.candidates?.[0]?.content?.parts || []) {
+      if (part.inlineData) {
+        reportImage = part.inlineData.data;
+        break;
+      }
+    }
+
+    if (!reportImage) {
+      throw new Error("No diagnostic image returned.");
+    }
+
+    const analysisPrompt = `
+      You are an aesthetic clinic expert. Study the person's actual facial proportions in the provided image and produce a JSON object with:
+      {
+        "summary": "One elegant paragraph describing the overall aesthetic diagnosis.",
+        "metrics": [
+          {"label":"Eyes Beauty","score":92},
+          {"label":"Cheeks Harmony","score":85},
+          {"label":"Lips Shape","score":88},
+          {"label":"Eyebrows Design","score":80},
+          {"label":"Jaw & Chin Definition","score":90},
+          {"label":"Facial Symmetry","score":89},
+          {"label":"OVERALL SCORE","score":90}
+        ]
+      }
+      Rules:
+      - Scores are integers 50-100 based on harmony and symmetry.
+      - Use the exact labels above.
+      - Summary should reference notable strengths/opportunities referencing the scores.
+    `;
+
+    const analysisResponse = await ai.models.generateContent({
+      model: "gemini-2.5-flash",
+      contents: {
+        parts: [
+          {
+            inlineData: {
+              mimeType: "image/jpeg",
+              data: imageBase64,
+            },
+          },
+          { text: analysisPrompt },
+        ],
+      },
+      config: {
+        responseMimeType: "application/json",
+      },
+      tools: GOOGLE_SEARCH_TOOL,
+    });
+
+    const analysisText = analysisResponse.text || "";
+    let summary = "A refined, data-informed facial aesthetic snapshot.";
+    let metrics: FacialMetric[] = DEFAULT_METRICS;
+
+    if (analysisText) {
+      try {
+        const parsed = JSON.parse(cleanJsonString(analysisText));
+        if (parsed.summary) summary = parsed.summary;
+        if (Array.isArray(parsed.metrics) && parsed.metrics.length >= 6) {
+          metrics = parsed.metrics.map((metric: FacialMetric) => ({
+            label: metric.label,
+            score: Number(metric.score),
+          }));
+        }
+      } catch (err) {
+        console.warn("Failed to parse diagnostic metrics, using defaults.", err);
+      }
+    }
+
+    return { reportImage, summary, metrics };
+  } catch (error) {
+    console.error("Error generating facial report:", error);
+    return {
+      reportImage: "",
+      summary: "Unable to generate the facial report. Please retry with a clearer portrait.",
+      metrics: DEFAULT_METRICS,
+    };
+  }
+};
+
+/**
+ * Generates a makeup look leveraging the user's request, research, and diagnosis.
+ */
+export const generateMakeupLook = async (
+  imageBase64: string,
+  userRequest: string = "",
+  researchNotes: string = "",
+  diagnosisSummary: string = ""
+): Promise<string> => {
   try {
     const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
 
-    // Build the prompt based on user request
-    let prompt = '';
-    if (userRequest.trim()) {
-      prompt = `Apply makeup to this person based on the following request: "${userRequest}". Make sure the makeup style matches their request (e.g., if they ask for cool-tone pink lipstick, apply cool-tone pink lips; if they ask for natural look, apply light natural makeup). Keep the facial structure and identity identical, only apply virtual makeup. Photorealistic, 8k resolution.`;
-    } else {
-      prompt = 'Apply a sophisticated, high-fashion K-beauty makeup look to this person. Enhance skin texture to be glass-like, add soft coral-pink blush, defined eyeliner, and a gradient lip tint. Keep the facial structure identity identical, only apply virtual makeup. Photorealistic, 8k resolution.';
-    }
+    const trimmedRequest = userRequest.trim();
+    const trimmedNotes = researchNotes.trim();
+    const trimmedDiagnosis = diagnosisSummary.trim();
+
+    const prompt = `
+      You are a celebrity-level K-Beauty makeup artist.
+      Base the virtual makeover on:
+      - USER REQUEST: ${trimmedRequest || "Deliver a polished, wearable Korean beauty glow."}
+      - RESEARCH NOTES: ${trimmedNotes || "None provided."}
+      - DIAGNOSIS SUMMARY: ${trimmedDiagnosis || "No diagnostic context, rely on standard flattering ratios."}
+      Apply photorealistic makeup that respects the subject's existing identity, undertone, and features. Keep the face, gender, and expression identical. Ultra high-res, cinematic studio lighting.
+    `;
 
     const response = await ai.models.generateContent({
       model: 'gemini-2.5-flash-image',
@@ -150,6 +298,7 @@ export const generateMakeupLook = async (imageBase64: string, userRequest: strin
           },
         ],
       },
+      tools: GOOGLE_SEARCH_TOOL,
     });
 
     for (const part of response.candidates?.[0]?.content?.parts || []) {
@@ -168,7 +317,12 @@ export const generateMakeupLook = async (imageBase64: string, userRequest: strin
 /**
  * Analyzes the image and selects matching products from Olive Young's best sellers.
  */
-export const searchProducts = async (imageBase64: string, userRequest: string = ""): Promise<{ products: Product[], description: string }> => {
+export const searchProducts = async (
+  imageBase64: string,
+  userRequest: string = "",
+  researchNotes: string = "",
+  diagnosisSummary: string = ""
+): Promise<{ products: Product[]; description: string }> => {
   try {
     // 1. Fetch real product data first
     const availableProducts = await fetchOliveYoungProducts();
@@ -188,13 +342,20 @@ export const searchProducts = async (imageBase64: string, userRequest: string = 
     const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
 
     // 2. Ask Gemini to pick from the list
+    const trimmedRequest = userRequest.trim();
+    const trimmedNotes = researchNotes.trim();
+    const trimmedDiagnosis = diagnosisSummary.trim();
+
     const prompt = `
       You are a professional K-Beauty consultant.
       1. Analyze the user's face in the image.
-      2. I have provided a list of currently trending Best Seller products from Olive Young below.
-      3. Select exactly 4 products from this list that would best create a "Glass Skin" or trendy K-Beauty look for this specific user.
-      4. For each selected product, provide a persuasive and specific reason why it fits this user's generated look.
-      5. Return a JSON object.
+      2. User request: ${trimmedRequest || "Provide a balanced, flattering upgrade."}
+      3. Research notes sourced from YouTube/Google/etc.: ${trimmedNotes || "None."}
+      4. Facial diagnosis summary: ${trimmedDiagnosis || "Not available."}
+      5. I have provided a list of currently trending Best Seller products from Olive Young below.
+      6. Select exactly 4 products from this list that would best create a customized look aligned with the context above.
+      7. For each product, provide a persuasive reason that references the request, diagnosis, or research when relevant.
+      8. Return a JSON object.
 
       AVAILABLE PRODUCTS JSON:
       ${JSON.stringify(productListContext)}
@@ -226,7 +387,8 @@ export const searchProducts = async (imageBase64: string, userRequest: string = 
       },
       config: {
         responseMimeType: "application/json"
-      }
+      },
+      tools: GOOGLE_SEARCH_TOOL
     });
 
     const text = response.text || "";

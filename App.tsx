@@ -6,7 +6,7 @@ import {
   Camera,
   RefreshCw,
   ArrowRight,
-  X,
+  X, ExternalLink,
 } from "lucide-react";
 import { BeautyState, Product, SharedData } from "./types";
 import { generateMakeupLook, searchProducts } from "./services/geminiService";
@@ -166,33 +166,36 @@ const App: React.FC = () => {
 
   const handleProcess = async () => {
     if (!state.originalImage) return;
+    if (!userRequest.trim()) {
+      setState(prev => ({ ...prev, error: "Please enter some keywords first." }));
+      return;
+    }
 
-    setState((prev) => ({ ...prev, isLoading: true, error: null }));
+    setState(prev => ({ ...prev, isLoading: true, error: null }));
 
     try {
-      // Split base64 header
-      const base64Data = state.originalImage.split(",")[1];
+      const base64Data = state.originalImage.split(',')[1];
 
-      // Run parallel requests: Visual Generation & Product Search with user request
+      // Run generation and product search in parallel
       const [generatedImgB64, productData] = await Promise.all([
         generateMakeupLook(base64Data, userRequest),
-        searchProducts(base64Data, userRequest),
+        searchProducts(userRequest)
       ]);
 
-      setState((prev) => ({
+      setState(prev => ({
         ...prev,
         isLoading: false,
         generatedImage: `data:image/jpeg;base64,${generatedImgB64}`,
         products: productData.products,
         lookDescription: productData.description,
       }));
+
     } catch (err: any) {
       console.error(err);
-      setState((prev) => ({
+      setState(prev => ({
         ...prev,
         isLoading: false,
-        error:
-          "Failed to generate your beauty look. Please try a clearer photo or try again later.",
+        error: "Failed to process. Please check your connection and try again."
       }));
     }
   };
@@ -430,81 +433,60 @@ const App: React.FC = () => {
                 </div>
               </div>
 
-              {/* Analysis & Recommendations */}
+              {/* Products List (New Format) */}
               {!state.isLoading && (
-                <div className="space-y-12">
-                  {/* User Request Input - Keep visible for re-generation */}
-                  <div className="max-w-3xl mx-auto bg-neutral-900/50 border border-neutral-800 rounded-2xl p-6 backdrop-blur-sm">
-                    <div className="space-y-2">
-                      <label
-                        htmlFor="user-request-results"
-                        className="block text-sm font-medium text-gray-300 text-left"
-                      >
-                        What kind of makeup look would you like? (Optional)
-                      </label>
-                      <input
-                        id="user-request-results"
-                        type="text"
-                        value={userRequest}
-                        onChange={(e) => setUserRequest(e.target.value)}
-                        placeholder="e.g., Cool-tone pink lipstick, natural everyday look, dewy glass skin..."
-                        className="w-full px-4 py-3 bg-neutral-800 border border-neutral-700 rounded-lg text-white placeholder-gray-500 focus:outline-none focus:border-neon-500 focus:ring-1 focus:ring-neon-500 transition-colors"
-                      />
-                      <p className="text-xs text-gray-500 text-left">
-                        Describe your desired makeup style, products, or skin tone preferences
-                      </p>
+                  <div className="max-w-4xl mx-auto space-y-12">
+
+                    <div className="bg-neutral-900/50 border border-neutral-800 rounded-2xl p-8 backdrop-blur-sm">
+                      <h2 className="text-3xl font-bold text-center mb-2">
+                        Recommended Products <span className="text-neon-400">.</span>
+                      </h2>
+                      <p className="text-center text-gray-400 mb-8">{state.lookDescription}</p>
+
+                      {state.products.length > 0 ? (
+                          <ul className="space-y-4">
+                            {state.products.map((product, idx) => (
+                                <li
+                                    key={idx}
+                                    className="bg-black/40 border border-neutral-800 rounded-lg p-4 hover:border-neon-500/50 transition-all group flex flex-col sm:flex-row sm:items-center justify-between gap-4"
+                                >
+                                  <div className="flex-1">
+                                    <h3 className="text-lg font-bold text-white group-hover:text-neon-400 transition-colors">
+                                      {product.name}
+                                    </h3>
+                                    <p className="text-sm text-gray-500 mt-1">
+                                      {product.description}
+                                    </p>
+                                  </div>
+
+                                  <a
+                                      href={product.url}
+                                      target="_blank"
+                                      rel="noopener noreferrer"
+                                      className="inline-flex items-center justify-center px-4 py-2 bg-neutral-800 hover:bg-neon-600 hover:text-black text-neon-400 rounded-full text-sm font-medium transition-all whitespace-nowrap border border-neon-900 hover:border-neon-400"
+                                  >
+                                    Search on Olive Young <ExternalLink size={14} className="ml-2" />
+                                  </a>
+                                </li>
+                            ))}
+                          </ul>
+                      ) : (
+                          <div className="text-center text-gray-500 py-10">
+                            No trending products found for these keywords.
+                          </div>
+                      )}
                     </div>
-                    <Button onClick={handleProcess} className="w-full text-lg mt-4" disabled={state.isLoading}>
-                      Regenerate Look <Sparkles className="ml-2" size={18} />
-                    </Button>
-                  </div>
 
-                  {/* Description Box */}
-                  <div className="bg-neutral-900/60 border border-neutral-800 p-8 rounded-2xl text-center max-w-3xl mx-auto backdrop-blur-md relative overflow-hidden">
-                    <div className="absolute top-0 left-0 w-full h-1 bg-gradient-to-r from-transparent via-neon-500 to-transparent opacity-50"></div>
-                    <h2 className="text-2xl font-bold text-white mb-4">
-                      Your Beauty Profile
-                    </h2>
-                    <p className="text-gray-300 text-lg leading-relaxed italic">
-                      "{state.lookDescription}"
-                    </p>
+                    {/* Actions */}
+                    <div className="flex flex-col sm:flex-row justify-center gap-4 pt-8 border-t border-neutral-800">
+                      <Button onClick={reset} variant="secondary">
+                        <RefreshCw className="mr-2" size={18} /> Try New Keywords
+                      </Button>
+                      <Button onClick={handleShare}>
+                        {shareUrl ? "Link Copied!" : "Share Results"} <Share2 className="ml-2" size={18} />
+                      </Button>
+                    </div>
                   </div>
-
-                  {/* Products Grid */}
-                  <div>
-                    <h2 className="text-3xl font-bold text-center mb-10">
-                      Recommended Products{" "}
-                      <span className="text-neon-400">.</span>
-                    </h2>
-
-                    {state.products.length > 0 ? (
-                      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
-                        {state.products.map((product, idx) => (
-                          <ProductCard
-                            key={idx}
-                            product={product}
-                            index={idx}
-                          />
-                        ))}
-                      </div>
-                    ) : (
-                      <div className="text-center text-gray-500 py-10">
-                        No specific products found. Try generating again.
-                      </div>
-                    )}
-                  </div>
-
-                  {/* Actions */}
-                  <div className="flex flex-col sm:flex-row justify-center gap-4 pt-8 border-t border-neutral-800">
-                    <Button onClick={reset} variant="secondary">
-                      <RefreshCw className="mr-2" size={18} /> Try Another Photo
-                    </Button>
-                    <Button onClick={handleShare}>
-                      {shareUrl ? "Link Copied!" : "Share Results"}{" "}
-                      <Share2 className="ml-2" size={18} />
-                    </Button>
-                  </div>
-                </div>
               )}
             </div>
           )}

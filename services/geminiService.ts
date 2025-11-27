@@ -106,11 +106,25 @@ export const searchProducts = async (keywords: string): Promise<{ products: Prod
       parsed.recommendations.forEach((rec: any, index: number) => {
         const brand = rec.brand || "";
         const itemName = rec.productName || rec.name || "";
+        // Clean product name for search: remove brackets, special chars, numbers
+        const cleanItemName = itemName
+          .replace(/\([^)]*\)/g, '') // Remove content in parentheses
+          .replace(/\[[^\]]*]/g, '') // Remove content in square brackets
+          .replace(/\d/g, '') // Remove all numbers
+          .replace(/[^\w\s가-힣]/g, ' ') // Remove special chars except Korean, letters, spaces
+          .replace(/\s+/g, ' ') // Replace multiple spaces with single space
+          .trim(); // Remove leading/trailing spaces
+
         // Display string includes Brand for clarity
         const displayName = brand ? `${brand} - ${itemName}` : itemName;
 
-        // Search query uses ONLY the product name as requested
-        const query = encodeURIComponent(itemName);
+        // Search query uses cleaned product name
+        const query = encodeURIComponent(cleanItemName || itemName);
+        
+        // Debug log to show cleaning effect
+        if (cleanItemName !== itemName) {
+          console.log(`Cleaned "${itemName}" → "${cleanItemName}"`);
+        }
 
         selectedProducts.push({
           id: `trend-${index}`,

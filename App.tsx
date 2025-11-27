@@ -6,12 +6,86 @@ import {
   Camera,
   RefreshCw,
   ArrowRight,
-  X, ExternalLink,
+  X, 
+  ExternalLink,
+  TrendingUp,
+  Hash,
 } from "lucide-react";
 import { BeautyState, Product, SharedData } from "./types";
 import { generateMakeupLook, searchProducts } from "./services/geminiService";
 import Button from "./components/Button";
 import ProductCard from "./components/ProductCard";
+
+// Popular keywords data
+const TRENDING_KEYWORDS = [
+  { rank: 1, keyword: "glass skin", trend: "up" },
+  { rank: 2, keyword: "dewy makeup", trend: "up" },
+  { rank: 3, keyword: "coral blush", trend: "stable" },
+  { rank: 4, keyword: "gradient lips", trend: "up" },
+  { rank: 5, keyword: "cat eye liner", trend: "down" },
+  { rank: 6, keyword: "no makeup makeup", trend: "up" },
+  { rank: 7, keyword: "bold red lips", trend: "stable" },
+  { rank: 8, keyword: "smoky eyes", trend: "down" },
+  { rank: 9, keyword: "peachy tones", trend: "up" },
+  { rank: 10, keyword: "glossy finish", trend: "stable" },
+];
+
+const TrendingKeywords: React.FC<{ onKeywordClick: (keyword: string) => void }> = ({ onKeywordClick }) => {
+  return (
+    <div className="mt-6 p-6 bg-neutral-900/30 border border-neutral-800 rounded-xl backdrop-blur-sm">
+      <div className="flex items-center gap-2 mb-4">
+        <TrendingUp className="text-neon-400" size={18} />
+        <h3 className="text-lg font-bold text-white">Trending Keywords</h3>
+        <span className="text-xs text-gray-500 bg-neutral-800 px-2 py-1 rounded-full">Live</span>
+      </div>
+      
+      <div className="grid grid-cols-2 gap-2">
+        {TRENDING_KEYWORDS.map((item) => (
+          <button
+            key={item.rank}
+            onClick={() => onKeywordClick(item.keyword)}
+            className="flex items-center justify-between p-2 text-left hover:bg-neutral-800/50 rounded-lg transition-colors group"
+          >
+            <div className="flex items-center gap-2 flex-1">
+              <span className="text-xs font-bold text-neon-400 min-w-[20px]">
+                #{item.rank}
+              </span>
+              <span className="text-sm text-gray-300 group-hover:text-white transition-colors truncate">
+                {item.keyword}
+              </span>
+            </div>
+            <div className="flex items-center gap-1">
+              {item.trend === "up" && (
+                <div className="w-1 h-1 bg-green-400 rounded-full"></div>
+              )}
+              {item.trend === "down" && (
+                <div className="w-1 h-1 bg-red-400 rounded-full"></div>
+              )}
+              {item.trend === "stable" && (
+                <div className="w-1 h-1 bg-yellow-400 rounded-full"></div>
+              )}
+            </div>
+          </button>
+        ))}
+      </div>
+      
+      <div className="mt-3 text-xs text-gray-500 text-center">
+        <span className="inline-flex items-center gap-1">
+          <div className="w-1 h-1 bg-green-400 rounded-full"></div>
+          Rising
+        </span>
+        <span className="inline-flex items-center gap-1 ml-3">
+          <div className="w-1 h-1 bg-yellow-400 rounded-full"></div>
+          Stable  
+        </span>
+        <span className="inline-flex items-center gap-1 ml-3">
+          <div className="w-1 h-1 bg-red-400 rounded-full"></div>
+          Falling
+        </span>
+      </div>
+    </div>
+  );
+};
 
 const App: React.FC = () => {
   const [state, setState] = useState<BeautyState>({
@@ -220,6 +294,10 @@ const App: React.FC = () => {
     }
   };
 
+  const handleKeywordClick = (keyword: string) => {
+    setUserRequest(keyword);
+  };
+
   const reset = () => {
     setState({
       originalImage: null,
@@ -377,6 +455,9 @@ const App: React.FC = () => {
                       Describe your desired makeup style, products, or skin tone preferences
                     </p>
                   </div>
+
+                  {/* Trending Keywords Component */}
+                  <TrendingKeywords onKeywordClick={handleKeywordClick} />
 
                   <Button onClick={handleProcess} className="w-full text-lg">
                     Generate My Look <Sparkles className="ml-2" size={18} />

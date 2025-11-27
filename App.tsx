@@ -340,11 +340,11 @@ const App: React.FC = () => {
                 </div>
               ) : (
                 <div className="space-y-6">
-                  <div className="relative rounded-xl overflow-hidden shadow-2xl mx-auto max-h-[400px]">
+                  <div className="relative rounded-xl overflow-hidden shadow-2xl mx-auto max-h-[500px] bg-neutral-900 flex items-center justify-center">
                     <img
                       src={state.originalImage}
                       alt="Original"
-                      className="w-full h-full object-cover"
+                      className="w-full h-auto object-contain max-h-[500px]"
                     />
                     <button
                       onClick={reset}

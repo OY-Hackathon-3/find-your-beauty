@@ -441,7 +441,7 @@ const App: React.FC = () => {
                       htmlFor="user-request"
                       className="block text-sm font-medium text-gray-300 text-left"
                     >
-                      What kind of makeup look would you like? (Optional)
+                      What kind of makeup look would you like?
                     </label>
                     <input
                       id="user-request"
